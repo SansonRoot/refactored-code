@@ -26,6 +26,10 @@ class BookingController extends Controller
      */
     public function __construct(BookingRepository $bookingRepository)
     {
+
+        // protect controller and only allow authenticated users access, through the auth middleware
+        $this->middleware('auth');
+
         $this->repository = $bookingRepository;
     }
 
@@ -35,17 +39,49 @@ class BookingController extends Controller
      */
     public function index(Request $request)
     {
-        if($user_id = $request->get('user_id')) {
 
-            $response = $this->repository->getUsersJobs($user_id);
+        $user_id = $request->get('user_id');
 
-        }
-        elseif($request->__authenticatedUser->user_type == env('ADMIN_ROLE_ID') || $request->__authenticatedUser->user_type == env('SUPERADMIN_ROLE_ID'))
+        $filters = [
+            \FetchCount::class,
+            \FilterByFeedback::class,
+            \FilterByCustomer::class,
+            \FilterByTranslator::class,
+            \FilterByMeta::class,
+            \FilterByExpiry::class,
+            \FilterById::class,
+            \FilterByLangStatus::class,
+            \FilterByTimestamps::class,
+            \FetchEagerLoad::class,
+            \OrderByCreatedAt::class
+        ];
+
+        //we can use scopes to achieve this in a better way
+        //if authenticated user is a super admin or admin, fetch all jobs
+        if(auth()->user()->user_type == env('ADMIN_ROLE_ID') || auth()->user()->user_type == env('SUPERADMIN_ROLE_ID'))
         {
-            $response = $this->repository->getAll($request);
+
+            // use pipeline to handle the query result, return a query builder instance to the paginate
+            // class to handle and respond appropriately
+
+            return \Response::paginate(
+                app(Pipeline::class)
+                    ->send($this->repository->getAll())
+                    ->through($filters)
+                    ->thenReturn()
+            );
+
+        }else { //only fetch user's jobs
+
+            return \Response::paginate(
+                app(Pipeline::class)
+                    ->send($this->repository->getUsersJobs($user_id))
+                    ->through($filters)
+                    ->thenReturn()
+            );
+
         }
 
-        return response($response);
     }
 
     /**
@@ -222,7 +258,7 @@ class BookingController extends Controller
         } else {
             $flagged = 'no';
         }
-        
+
         if ($data['manually_handled'] == 'true') {
             $manually_handled = 'yes';
         } else {
